@@ -1,0 +1,61 @@
+{%- macro render_bool(value) %}{% if value %}true{% else %}false{% endif %}{% endmacro -%}
+
+
+{%- set xmlns = "http://schemas.microsoft.com/windows/2004/02/mit/task" -%}
+<Task xmlns="{{ xmlns }}" version="1.3">
+    <RegistrationInfo>
+        {% if task.registration_date %}<Date>{{ task.registration_date_or_now }}</Date>{% endif %}
+        {% if task.author %}<Author>{{ task.author }}</Author>{% endif %}
+        {% if task.description %}<Description>{{ task.description }}</Description>{% endif %}
+        {% if task.uri %}<URI>{{ task.uri }}</URI>{% endif %}
+    </RegistrationInfo>
+    {% if task.triggers %}<Triggers>{% for trigger in task.triggers %}
+        {% if trigger.type_ == 'TimeTrigger' %}<TimeTrigger>
+            <StartBoundary>{{ start_time }}</StartBoundary>
+            <Enabled>{{ render_bool(enabled) }}</Enabled>
+        </TimeTrigger>{% elif trigger.type_ == 'LogonTrigger' %}<LogonTrigger>
+            <Enabled>{{ render_bool(trigger.enabled) }}</Enabled>
+            <UserId>{{ trigger.user_id }}</UserId>
+        </LogonTrigger>{% elif trigger.type_ == 'CalendarTrigger' %}<CalendarTrigger>
+            {% if trigger.repetition %}<Repetition>
+                <Interval>{{ trigger.repetition.interval }}</Interval>
+                <Duration>{{ trigger.repetition.duration }}</Duration>
+                <StopAtDurationEnd>{{ render_bool(trigger.repetition.stop_at_duration_end) }}</StopAtDurationEnd>
+            </Repetition>{% endif %}
+            <StartBoundary>{{ trigger.start_boundary }}</StartBoundary>
+            <Enabled>{{ render_bool(trigger.enabled) }}</Enabled>
+            <ScheduleByDay>
+            <DaysInterval>{{ trigger.schedule_by_day.days_interval }}</DaysInterval>
+            </ScheduleByDay>
+        </CalendarTrigger>{% elif trigger.type_ == 'BootTrigger' %}
+        <BootTrigger>
+            <Enabled>{{ render_bool(trigger.enabled) }}</Enabled>
+        </BootTrigger>{% endif %}
+    {% endfor %}</Triggers>{% endif %}
+    {% if task.actions %}<Actions Context="Author">{% for action in task.actions %}
+        {% if action.type_ == 'Exec' %}<Exec>
+            <Command>{{ action.command }}</Command>
+            <Arguments>{{ action.arguments }}</Arguments>
+            <WorkingDirectory>{{ action.working_directory }}</WorkingDirectory>
+        </Exec>{% endif %}
+    {% endfor %}</Actions>{% endif %}
+    {% if task.settings %}<Settings>{% set settings = task.settings %}
+        {% if settings.multiple_instances_policy %}<MultipleInstancesPolicy>{{ settings.multiple_instances_policy }}</MultipleInstancesPolicy>{% endif %}
+        {% if settings.disallow_start_if_on_batteries %}<DisallowStartIfOnBatteries>{{ settings.disallow_start_if_on_batteries }}</DisallowStartIfOnBatteries>{% endif %}
+        {% if settings.stop_if_going_on_batteries %}<StopIfGoingOnBatteries>{{ settings.stop_if_going_on_batteries }}</StopIfGoingOnBatteries>{% endif %}
+        {% if settings.allow_hard_terminate %}<AllowHardTerminate>{{ render_bool(settings.allow_hard_terminate) }}</AllowHardTerminate>{% endif %}
+        {% if settings.start_when_available %}<StartWhenAvailable>{{ render_bool(settings.start_when_available) }}</StartWhenAvailable>{% endif %}
+        {% if settings.run_only_if_network_available %}<RunOnlyIfNetworkAvailable>{{ render_bool(settings.run_only_if_network_available) }}</RunOnlyIfNetworkAvailable>{% endif %}
+        {% if settings.idle_settings %}<IdleSettings>
+            {% if settings.idle_settings.stop_on_idle_end %}<StopOnIdleEnd>{{ render_bool(settings.idle_settings.stop_on_idle_end) }}</StopOnIdleEnd>{% endif %}
+            {% if settings.idle_settings.restart_on_idle %}<RestartOnIdle>{{ render_bool(settings.idle_settings.restart_on_idle) }}</RestartOnIdle>{% endif %}
+        </IdleSettings>{% endif %}
+        {% if settings.allow_start_on_demand %}<AllowStartOnDemand>{{ render_bool(settings.allow_start_on_demand) }}</AllowStartOnDemand>{% endif %}
+        {% if settings.enabled %}<Enabled>{{ render_bool(settings.enabled) }}</Enabled>{% endif %}
+        {% if settings.hidden %}<Hidden>{{ render_bool(settings.hidden) }}</Hidden>{% endif %}
+        {% if settings.run_only_if_idle %}<RunOnlyIfIdle>{{ render_bool(settings.run_only_if_idle) }}</RunOnlyIfIdle>{% endif %}
+        {% if settings.wake_to_run %}<WakeToRun>{{ render_bool(settings.wake_to_run) }}</WakeToRun>{% endif %}
+        {% if settings.execution_time_limit %}<ExecutionTimeLimit>{{ settings.execution_time_limit }}</ExecutionTimeLimit>{% endif %}
+        {% if settings.priority %}<Priority>{{ settings.priority }}</Priority>{% endif %}
+    </Settings>{% endif %}
+</Task>
