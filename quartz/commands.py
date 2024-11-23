@@ -1,4 +1,6 @@
+import fnmatch
 import logging
+import re
 import subprocess
 
 from . import const
@@ -20,10 +22,8 @@ def capture_tasks(args):
 
     for task in schtasks.get_tasks():
         if any(condition(task) for condition in filters):
-            #pprint(task)
             task_name = task['TaskName']
             print(task_name)
-            #print(task_name.split('\\'))
 
 def remove(args):
     """
@@ -32,8 +32,6 @@ def remove(args):
     regexes = list(map(shell_pattern_regex, args.name_or_wildcard))
     found_any = False
     for task_name in schtasks.get_tasks_list():
-        if not task_name.startswith('\\Microsoft'):
-            print(task_name)
         if any(regex.match(task_name) for regex in regexes):
             found_any = True
             result = schtasks.delete(task_name)
@@ -168,6 +166,25 @@ def update(args):
                 run_admin_batch_command,
                 capture_with_pipe = False,
             )
+
+def list(args):
+    """
+    List existing system scheduled tasks.
+    """
+    filters = [re.compile(fnmatch.translate(pattern)) for pattern in args.paths]
+    if not filters:
+        filters.append(re.compile(fnmatch.translate('*')))
+
+    tasks = []
+    for task_data in schtasks.get_tasks():
+        if any(regex.match(task_data['TaskName']) for regex in filters):
+            tasks.append(task_data)
+
+    if args.sort:
+        tasks = sorted(tasks, key=lambda task_data: task_data['TaskName'])
+
+    for task_data in tasks:
+        print(task_data['TaskName'])
 
 def list_configured(args):
     """

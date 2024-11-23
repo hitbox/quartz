@@ -1,3 +1,5 @@
+import csv
+import io
 import subprocess
 
 def create_from_xml_command(task_name, xml_path, force=False):
@@ -73,7 +75,7 @@ def get_tasks(verbose=False):
     header = next(reader)
     tasks = []
     for row in reader:
-        if  row == header:
+        if row == header:
             continue
         tasks.append(dict(zip(header, row)))
     return tasks
