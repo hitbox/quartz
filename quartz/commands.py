@@ -1,29 +1,100 @@
 import fnmatch
 import logging
+import operator
 import re
 import subprocess
+import sys
 
 from . import const
 from . import schtasks
 from . import utils
 
+class AuthorFilter:
+
+    def __init__(self, author):
+        self.author = author
+
+    def __call__(self, task):
+        return task.get('RegistrationInfo', {}).get('Author') == self.author
+
+
+def get_filters_and_selects(args, with_config_module=False):
+    """
+    Return two lists of filters and selects. A filter is a callable that takes
+    a task dict and returns whether to keep the task. A select is simply a key
+    to extract from the task dict.
+    """
+    filters = []
+    selects = []
+
+    if with_config_module:
+        config_module = utils.get_config_module(raise_=False)
+        if config_module:
+            # functions taking the task and returning bool
+            filters.extend(getattr(config_module, 'CAPTURE_FILTERS', []))
+
+    if args.filter:
+        filters.extend(args.filter)
+
+    if args.author:
+        filters.append(AuthorFilter(args.author))
+
+    if not filters:
+        filters.append(lambda task: True)
+
+    if args.select:
+        selects.extend(args.select)
+
+    if not selects:
+        selects.append('TaskName')
+
+    return (filters, selects)
+
+def test_needs_xml(filters, selects):
+    need_xml = False
+    fake_task = dict(zip(schtasks.csv_fields, ''))
+    for filter_ in filters:
+        try:
+            filter_(fake_task)
+        except (KeyError, ValueError):
+            need_xml = True
+            break
+
+    if not need_xml:
+        for key in selects:
+            if key not in schtasks.csv_fields:
+                need_xml = True
+                break
+
+    return need_xml
+
+def add_user_data(task, silent=True):
+    # Try to add more friendly data about the user this task will run as.
+    try:
+        string_sid = task['Principals']['Principal']['UserId']
+        task['Principals']['Principal']['UserData'] = utils.account_info(string_sid)
+    except KeyError:
+        if not silent:
+            raise
+
 def capture_tasks(args):
     """
     Get the current state of scheduled tasks and convert to Python.
     """
-    config_module = utils.get_config_module()
-
+    from pprint import pprint
     logging.basicConfig()
     logger = logging.getLogger(const.APPNAME)
-
-    filters = getattr(config_module, 'CAPTURE_FILTERS', [])
-    if not filters:
-        filters.append(lambda task: True)
-
+    filters, selects = get_filters_and_selects(args)
+    unprefix = '{http://schemas.microsoft.com/windows/2004/02/mit/task}'
     for task in schtasks.get_tasks():
-        if any(condition(task) for condition in filters):
-            task_name = task['TaskName']
-            print(task_name)
+        task_xml = schtasks.get_xml(task['TaskName'])
+        task.update(utils.xml_to_dict(task_xml, unprefix=unprefix))
+        if all(condition(task) for condition in filters):
+            pprint(task)
+
+def capture_tasks(args):
+    from pprint import pprint
+    pprint(list(schtasks.get_tasks_xml()))
 
 def remove(args):
     """
@@ -41,28 +112,6 @@ def remove(args):
                 print(result.stderr)
     if not found_any:
         print('No tasks found')
-
-def remove_configured(args):
-    """
-    Remove scheduled tasks named from configuration.
-    """
-    config_module = utils.get_config_module()
-
-    logging.basicConfig()
-    logger = logging.getLogger(const.APPNAME)
-
-    for task in config_module.QUARTZ_TASKS:
-        if not schtasks.exists(task.name):
-            continue
-        try:
-            schtasks.delete(task.name)
-        except subprocess.CalledProcessError as e:
-            logger.exception('An exception occurred.')
-            if e.stdout:
-                logger.error('stdout: %s', e.stdout)
-            if e.stderr:
-                logger.error('stderr: %s', e.stderr)
-            raise
 
 def update(args):
     """
@@ -167,7 +216,7 @@ def update(args):
                 capture_with_pipe = False,
             )
 
-def list(args):
+def list_command(args):
     """
     List existing system scheduled tasks.
     """
@@ -186,6 +235,8 @@ def list(args):
     for task_data in tasks:
         print(task_data['TaskName'])
 
+by_name = operator.attrgetter('name')
+
 def list_configured(args):
     """
     List scheduled tasks from configuration.
@@ -197,7 +248,47 @@ def list_configured(args):
 
     tasks = config_module.QUARTZ_TASKS
     if args.sort:
-        tasks = sorted(tasks, key=lambda task: task.name)
+        tasks = sorted(tasks, key=by_name)
 
-    for task in tasks:
-        print(task.name)
+    if not args.check:
+        for task in tasks:
+            print(task.name)
+    else:
+        missing = [task for task in tasks if not schtasks.exists(task.name)]
+        if missing:
+            if args.sort:
+                missing = sorted(missing, key=by_name)
+            print('Missing scheduled tasks')
+            for task in missing:
+                print(task.name)
+
+def dump_xml(args):
+    """
+    Dump configured scheduled tasks to xml.
+    """
+    config_module = utils.get_config_module()
+
+    logging.basicConfig()
+    logger = logging.getLogger(const.APPNAME)
+
+    output_arg = args.output
+
+    if output_arg in (None, '-'):
+        output_stream = sys.stdout
+    else:
+        output_stream = None
+
+    for task in config_module.QUARTZ_TASKS:
+        task_xml_string = schtasks.get_xml(task.name, as_string=True)
+
+        if output_stream is not sys.stdout:
+            output_filename = output_arg.format(task=task)
+            if args.replace_backslashes:
+                output_filename = output_filename.replace('\\', args.replace_backslashes)
+            output_stream = open(output_filename, 'wb')
+
+        try:
+            output_stream.write(task_xml_string)
+        finally:
+            if output_stream is not sys.stdout:
+                output_stream.close()

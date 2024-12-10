@@ -6,6 +6,6 @@ def main(argv=None):
     """
     parser = argument_parser()
     args = parser.parse_args(argv)
-    args.func(args)
+    return args.func(args)
 
 main()

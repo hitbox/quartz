@@ -1,6 +1,29 @@
 import csv
 import io
 import subprocess
+import xml.etree.ElementTree as ET
+
+from lxml import etree
+
+# The fields output by schtasks for CSV.
+csv_fields = [
+    'TaskName',
+    'Next Run Time',
+    'Status',
+]
+
+schtasks_schema = None
+
+class SchemaValidationError(Exception):
+    pass
+
+def ensure_schtasks_schema():
+    global schtasks_schema
+    if schtasks_schema is None:
+        schtasks_schema = etree.XMLSchema(file='quartz/task_scheduler.xsd')
+        #with open('quartz/task_scheduler.xsd') as schema_file:
+        #    schtasks_schema = etree.XMLSchema(file=schema_file)
+    return schtasks_schema
 
 def create_from_xml_command(task_name, xml_path, force=False):
     """
@@ -115,7 +138,7 @@ def get_tasks_folders(verbose=False):
 
 def get_tasks_xml():
     # XXX
-    # - schtasks.exe does not give proper xml.
+    # - schtasks.exe does not give proper xml for a complete dump of all tasks.
     # - but does for specific tasks.
     command = ['schtasks', '/query', '/xml']
     result = subprocess.run(
@@ -145,6 +168,10 @@ def run_as_command(task_name, user, password, for_batch=False):
     return command
 
 def schtasks_get_data(task_name):
+    """
+    Nearly complete task data as xml object. Data is not complete because
+    schtasks does not dump everything.
+    """
     command = ['schtasks', '/query', '/xml', '/tn', task_name]
     result = subprocess.run(
         command,
@@ -177,3 +204,28 @@ def task_run_as(task_name, user, password):
         stdout = subprocess.PIPE,
     )
     return result
+
+def get_xml(task_name, as_string=False):
+    command = ['schtasks', '/query', '/xml', '/tn', task_name]
+    result = subprocess.run(
+        command,
+        capture_output = True,
+        check = True,
+    )
+    if as_string:
+        return result.stdout
+    else:
+        # the xml doc says utf-16 but it's really utf-8
+        xml_parser = etree.XMLParser(encoding='utf-8')
+        root = etree.fromstring(result.stdout, xml_parser)
+        return root
+
+def raise_for_validation(root):
+    schema = ensure_schtasks_schema()
+    if not schema.validate(root):
+        error_messages = []
+        for error in schema.error_log:
+            error_messages.append(
+                f'Error in {error.line}, {error.column}: {error.message}')
+        raise SchemaValidationError(
+            'Schema validation failed\n' + '\n'.join(error_messages))

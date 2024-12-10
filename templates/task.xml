@@ -4,10 +4,14 @@
 {%- set xmlns = "http://schemas.microsoft.com/windows/2004/02/mit/task" -%}
 <Task xmlns="{{ xmlns }}" version="1.3">
     <RegistrationInfo>
+        {% if task.uri %}<URI>{{ task.uri }}</URI>{% endif %}
+        {% if task.security_descriptor %}<SecurityDescriptor>{{ task.security_descriptor }}</SecurityDescriptor>{% endif %}
+        {% if task.source %}<Source>{{ task.source }}</Source>{% endif %}
         {% if task.registration_date %}<Date>{{ task.registration_date_or_now }}</Date>{% endif %}
         {% if task.author %}<Author>{{ task.author }}</Author>{% endif %}
+        {% if task.version %}<Version>{{ task.version }}</Version>{% endif %}
         {% if task.description %}<Description>{{ task.description }}</Description>{% endif %}
-        {% if task.uri %}<URI>{{ task.uri }}</URI>{% endif %}
+        {% if task.documentation %}<Documentation>{{ task.documentation }}</Documentation>{% endif %}
     </RegistrationInfo>
     {% if task.triggers %}<Triggers>{% for trigger in task.triggers %}
         {% if trigger.type_ == 'TimeTrigger' %}<TimeTrigger>
